@@ -18,7 +18,6 @@ export default defineConfig({
               req.on('end', () => {
                 try {
                   const parsed = JSON.parse(body);
-                  // Validação básica de estrutura para evitar crashes no frontend
                   if (parsed && Array.isArray(parsed.nodes)) {
                     lastGraph = {
                       nodes: parsed.nodes || [],
@@ -49,6 +48,6 @@ export default defineConfig({
     }
   ],
   define: {
-    'process.env.API_KEY': JSON.stringify(process.env.API_KEY)
+    'process.env.API_KEY': JSON.stringify(process.env.API_KEY || '')
   }
 });
