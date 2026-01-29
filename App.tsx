@@ -30,20 +30,33 @@ const App: React.FC = () => {
     setError(null);
     try {
       const result = await generateBlueprint(prompt);
-      setGraph(result);
+      if (result && result.nodes) {
+        setGraph(result);
+      } else {
+        throw new Error("Invalid format from AI");
+      }
     } catch (err) {
       console.error(err);
-      setError("AI generation failed. Use 'Paste JSON' or enable 'Live Sync' with Claude.");
+      setError("Falha na geração. Verifique sua API Key ou use o 'Paste JSON'.");
     } finally {
       setLoading(false);
     }
   };
 
+  const handleReset = () => {
+    setGraph(INITIAL_GRAPH);
+    lastSyncHash.current = '';
+    setError(null);
+  };
+
   const handleImportJson = (jsonString: string) => {
     try {
       const parsed = JSON.parse(jsonString);
-      if (parsed && Array.isArray(parsed.nodes) && Array.isArray(parsed.edges)) {
-        setGraph(parsed as BlueprintGraphData);
+      if (parsed && Array.isArray(parsed.nodes)) {
+        setGraph({
+          nodes: parsed.nodes,
+          edges: parsed.edges || []
+        } as BlueprintGraphData);
         setShowImportModal(false);
         setImportValue('');
         setError(null);
@@ -64,13 +77,13 @@ const App: React.FC = () => {
         const response = await fetch('/api/sync');
         if (response.ok) {
           const data = await response.json();
-          if (data) {
+          if (data && data.nodes) {
             const hash = JSON.stringify(data);
             if (hash !== lastSyncHash.current) {
               lastSyncHash.current = hash;
               setGraph(data);
               setSyncStatus('syncing');
-              setTimeout(() => setSyncStatus('idle'), 2000);
+              setTimeout(() => setSyncStatus('idle'), 1500);
             }
           }
         }
@@ -133,6 +146,16 @@ const App: React.FC = () => {
                <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${isLiveSync ? 'left-4.5' : 'left-0.5'}`}></div>
              </button>
           </div>
+
+          <button
+            onClick={handleReset}
+            className="text-gray-500 hover:text-white transition-colors"
+            title="Clear Graph"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+            </svg>
+          </button>
 
           <button
             onClick={() => setShowImportModal(true)}

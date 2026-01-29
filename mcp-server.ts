@@ -8,7 +8,6 @@ import {
 import { GoogleGenAI, Type } from "@google/genai";
 import process from "node:process";
 
-// Blueprint Schema for Gemini response validation
 const blueprintSchema = {
   type: Type.OBJECT,
   properties: {
@@ -71,7 +70,7 @@ const blueprintSchema = {
 const server = new Server(
   {
     name: "unreal-blueprint-generator",
-    version: "1.2.0",
+    version: "1.4.0",
   },
   {
     capabilities: {
@@ -81,18 +80,17 @@ const server = new Server(
 );
 
 server.setRequestHandler(ListToolsRequestSchema, async () => {
-  console.error("[MCP] Claude requested tool list");
   return {
     tools: [
       {
         name: "generate_unreal_blueprint",
-        description: "Generates an Unreal Engine Blueprint visual script graph and updates the live visualizer app automatically.",
+        description: "Gera um gráfico de script visual do Unreal Engine e atualiza automaticamente o visualizador web.",
         inputSchema: {
           type: "object",
           properties: {
             prompt: {
               type: "string",
-              description: "The logic description (e.g. 'A light toggle system')",
+              description: "Descrição da lógica (ex: 'Sistema de pulo duplo com stamina')",
             },
           },
           required: ["prompt"],
@@ -111,45 +109,40 @@ async function broadcastToApp(data: any) {
     });
     return response.ok;
   } catch (e) {
-    console.error(`[MCP] Sync Broadcast Failed: Ensure web app is running at http://localhost:5173`);
+    console.error("[MCP] Falha ao sincronizar: O app web está rodando em http://localhost:5173?");
     return false;
   }
 }
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (request.params.name !== "generate_unreal_blueprint") {
-    throw new Error(`Unknown tool: ${request.params.name}`);
+    throw new Error(`Tool desconhecida: ${request.params.name}`);
   }
 
   const prompt = String(request.params.arguments?.prompt);
   const apiKey = process.env.API_KEY;
 
   if (!apiKey) {
-    console.error("[MCP] Error: API_KEY environment variable is missing!");
     return {
-      content: [{ type: "text", text: "Error: API_KEY is missing in Claude's MCP configuration." }],
+      content: [{ type: "text", text: "Erro: API_KEY faltando na configuração do Claude." }],
       isError: true,
     };
   }
 
-  console.error(`[MCP] Processing prompt: ${prompt}`);
   const ai = new GoogleGenAI({ apiKey });
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview', // Switched to Flash for better availability/speed
-      contents: `Generate an Unreal Engine Blueprint visual scripting graph for: "${prompt}". 
-      Return structured JSON data only. Include positions, pins, and connections.`,
+      model: 'gemini-3-flash-preview',
+      contents: `Gere um gráfico de Blueprint do Unreal Engine para: "${prompt}". 
+      Retorne APENAS JSON estruturado. Inclua posições X/Y realistas, pinos de EXEC e tipos de dados (BOOLEAN, FLOAT, etc).`,
       config: {
         responseMimeType: "application/json",
         responseSchema: blueprintSchema,
       },
     });
 
-    const text = response.text;
-    if (!text) throw new Error("Empty response from Gemini");
-
-    const blueprintData = JSON.parse(text);
+    const blueprintData = JSON.parse(response.text || "{}");
     const syncSuccess = await broadcastToApp(blueprintData);
 
     return {
@@ -157,19 +150,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         {
           type: "text",
           text: syncSuccess 
-            ? `Blueprint generated and synced to visualizer for: ${prompt}`
-            : `Blueprint generated for: ${prompt}. (Manual sync required - web app not detected at :5173)`,
+            ? `Blueprint gerado e enviado para o visualizador!`
+            : `Blueprint gerado, mas o visualizador não foi encontrado em :5173. Cole o JSON manualmente se necessário.`,
         },
         {
           type: "text",
-          text: text,
+          text: response.text,
         },
       ],
     };
   } catch (error: any) {
-    console.error(`[MCP] Tool Execution Error: ${error.message}`);
+    console.error(`[MCP] Erro: ${error.message}`);
     return {
-      content: [{ type: "text", text: `AI Generation Error: ${error.message}` }],
+      content: [{ type: "text", text: `Erro na IA: ${error.message}` }],
       isError: true,
     };
   }
@@ -178,14 +171,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("[MCP] Unreal Blueprint Server successfully connected to stdio");
-  
-  if (!process.env.API_KEY) {
-    console.error("[MCP] WARNING: No API_KEY found. Tool calls will fail.");
-  }
+  console.error("[MCP] Servidor Unreal Blueprint rodando via Stdio.");
 }
 
 main().catch((error) => {
-  console.error("[MCP] Critical Server Error:", error);
+  console.error("[MCP] Erro fatal:", error);
   process.exit(1);
 });

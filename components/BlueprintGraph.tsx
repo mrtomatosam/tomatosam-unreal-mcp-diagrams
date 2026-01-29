@@ -10,15 +10,18 @@ interface GraphProps {
 
 const BlueprintGraph: React.FC<GraphProps> = ({ graph }) => {
   const svgRef = useRef<SVGSVGElement>(null);
-  // Fixed: Replaced JSX.Element with React.ReactElement to resolve "Cannot find namespace 'JSX'" error
   const [paths, setPaths] = useState<React.ReactElement[]>([]);
 
   useEffect(() => {
+    // Garante que o gráfico tenha a estrutura básica antes de tentar desenhar caminhos
+    if (!graph || !graph.nodes || !graph.edges) return;
+
     const generatePaths = () => {
-      // Fixed: Replaced JSX.Element with React.ReactElement
       const newPaths: React.ReactElement[] = [];
 
       graph.edges.forEach((edge) => {
+        if (!edge.fromNodeId || !edge.toNodeId) return;
+
         const fromEl = document.getElementById(`pin-${edge.fromNodeId}-${edge.fromPinId}`);
         const toEl = document.getElementById(`pin-${edge.toNodeId}-${edge.toPinId}`);
 
@@ -27,29 +30,26 @@ const BlueprintGraph: React.FC<GraphProps> = ({ graph }) => {
           const fromRect = fromEl.getBoundingClientRect();
           const toRect = toEl.getBoundingClientRect();
 
-          // Calculate start and end relative to SVG container
           const startX = fromRect.right - svgRect.left - 4;
           const startY = fromRect.top + fromRect.height / 2 - svgRect.top;
           const endX = toRect.left - svgRect.left + 4;
           const endY = toRect.top + toRect.height / 2 - svgRect.top;
 
-          // Find the color based on the pin type (checking the graph data)
           const fromNode = graph.nodes.find(n => n.id === edge.fromNodeId);
-          const pin = fromNode?.outputs.find(p => p.id === edge.fromPinId);
+          const pin = fromNode?.outputs?.find(p => p.id === edge.fromPinId);
           const color = pin ? PIN_COLORS[pin.type] : '#ffffff';
 
-          // Cubic Bezier calculation
           const ctrlX1 = startX + Math.abs(endX - startX) * 0.5;
           const ctrlX2 = endX - Math.abs(endX - startX) * 0.5;
 
           newPaths.push(
             <path
-              key={edge.id}
+              key={edge.id || `${edge.fromNodeId}-${edge.toNodeId}`}
               d={`M ${startX} ${startY} C ${ctrlX1} ${startY}, ${ctrlX2} ${endY}, ${endX} ${endY}`}
               stroke={color}
               strokeWidth={pin?.type === PinType.EXEC ? "2.5" : "1.5"}
               fill="none"
-              className="opacity-80 shadow-glow"
+              className="opacity-80 transition-all duration-300"
               style={{ filter: `drop-shadow(0 0 2px ${color}88)` }}
             />
           );
@@ -58,10 +58,12 @@ const BlueprintGraph: React.FC<GraphProps> = ({ graph }) => {
       setPaths(newPaths);
     };
 
-    // Need a small timeout to ensure DOM elements (nodes) are rendered and accessible
-    const timer = setTimeout(generatePaths, 50);
+    const timer = setTimeout(generatePaths, 100);
     return () => clearTimeout(timer);
   }, [graph]);
+
+  // Se o gráfico estiver vazio ou malformado, renderiza apenas o grid
+  const nodes = graph?.nodes || [];
 
   return (
     <div className="relative w-full h-full blueprint-grid overflow-auto bg-[#0b0b0b]">
@@ -69,21 +71,12 @@ const BlueprintGraph: React.FC<GraphProps> = ({ graph }) => {
         ref={svgRef}
         className="absolute inset-0 w-full h-full pointer-events-none z-10"
       >
-        <defs>
-          <filter id="glow">
-            <feGaussianBlur stdDeviation="1.5" result="coloredBlur"/>
-            <feMerge>
-              <feMergeNode in="coloredBlur"/>
-              <feMergeNode in="SourceGraphic"/>
-            </feMerge>
-          </filter>
-        </defs>
         {paths}
       </svg>
       
       <div className="relative z-20 p-[2000px]">
-        {graph.nodes.map((node) => (
-          <BlueprintNode key={node.id} node={node} />
+        {nodes.map((node) => (
+          node && node.id ? <BlueprintNode key={node.id} node={node} /> : null
         ))}
       </div>
     </div>

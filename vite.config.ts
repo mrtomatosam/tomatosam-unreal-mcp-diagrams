@@ -17,9 +17,19 @@ export default defineConfig({
               req.on('data', chunk => { body += chunk; });
               req.on('end', () => {
                 try {
-                  lastGraph = JSON.parse(body);
-                  res.statusCode = 200;
-                  res.end(JSON.stringify({ status: 'ok' }));
+                  const parsed = JSON.parse(body);
+                  // Validação básica de estrutura para evitar crashes no frontend
+                  if (parsed && Array.isArray(parsed.nodes)) {
+                    lastGraph = {
+                      nodes: parsed.nodes || [],
+                      edges: parsed.edges || []
+                    };
+                    res.statusCode = 200;
+                    res.end(JSON.stringify({ status: 'ok' }));
+                  } else {
+                    res.statusCode = 400;
+                    res.end('Invalid Blueprint Structure');
+                  }
                 } catch (e) {
                   res.statusCode = 400;
                   res.end('Invalid JSON');

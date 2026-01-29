@@ -80,9 +80,9 @@ export const generateBlueprint = async (prompt: string): Promise<BlueprintGraph>
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview', // Consistent with MCP
-      contents: `Generate an Unreal Engine Blueprint visual scripting graph for: "${prompt}". 
-      Position nodes realistically. Include EXEC pins and connections.`,
+      model: 'gemini-3-flash-preview',
+      contents: `Gere um gráfico de Blueprint do Unreal Engine para: "${prompt}". 
+      Posicione os nós de forma lógica e organizada. Use pinos de EXEC para fluxo e tipos corretos para dados.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: blueprintSchema,
@@ -90,12 +90,12 @@ export const generateBlueprint = async (prompt: string): Promise<BlueprintGraph>
     });
 
     if (!response.text) {
-      throw new Error("No response from Gemini");
+      throw new Error("Resposta vazia da IA");
     }
 
     return JSON.parse(response.text) as BlueprintGraph;
   } catch (error) {
-    console.error("Error generating blueprint:", error);
+    console.error("Erro ao gerar blueprint via Web:", error);
     throw error;
   }
 };

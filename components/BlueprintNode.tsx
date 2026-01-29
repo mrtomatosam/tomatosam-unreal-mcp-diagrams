@@ -19,13 +19,15 @@ const getHeaderColor = (type: string) => {
 
 const BlueprintNode: React.FC<NodeProps> = ({ node }) => {
   const headerColor = getHeaderColor(node.type);
+  const inputs = node.inputs || [];
+  const outputs = node.outputs || [];
 
   return (
     <div 
       className="absolute border border-black/50 shadow-2xl rounded overflow-hidden min-w-[180px] select-none"
       style={{ 
-        left: node.position.x, 
-        top: node.position.y,
+        left: node.position?.x || 0, 
+        top: node.position?.y || 0,
         backgroundColor: COLORS.NODE_BG,
       }}
     >
@@ -41,7 +43,7 @@ const BlueprintNode: React.FC<NodeProps> = ({ node }) => {
              </svg>
           )}
           <span className="text-white text-xs font-bold uppercase tracking-tight">
-            {node.title}
+            {node.title || 'Untitled Node'}
           </span>
         </div>
       </div>
@@ -50,8 +52,8 @@ const BlueprintNode: React.FC<NodeProps> = ({ node }) => {
       <div className="flex justify-between p-2 gap-8">
         {/* Inputs */}
         <div className="flex flex-col gap-2">
-          {node.inputs.map((pin) => (
-            <div key={pin.id} className="flex items-center group">
+          {inputs.map((pin) => (
+            <div key={pin.id} className="flex items-center">
               <div id={`pin-${node.id}-${pin.id}`} className="flex items-center">
                 <PinIcon type={pin.type} connected={true} />
                 <span className="text-[10px] text-gray-300 font-medium">{pin.name}</span>
@@ -62,8 +64,8 @@ const BlueprintNode: React.FC<NodeProps> = ({ node }) => {
 
         {/* Outputs */}
         <div className="flex flex-col gap-2 items-end">
-          {node.outputs.map((pin) => (
-            <div key={pin.id} className="flex items-center group">
+          {outputs.map((pin) => (
+            <div key={pin.id} className="flex items-center">
               <div id={`pin-${node.id}-${pin.id}`} className="flex items-center">
                 <span className="text-[10px] text-gray-300 font-medium">{pin.name}</span>
                 <div className="ml-1">
