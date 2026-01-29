@@ -1,259 +1,250 @@
 
-import React, { useState, useEffect, useRef } from 'react';
-import BlueprintGraph, { GraphRef } from './components/BlueprintGraph';
-import { BlueprintGraph as BlueprintGraphData } from './types';
-import { generateBlueprint } from './services/geminiService';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Diagram, DiagramType, AnalysisResult } from './types';
+import { geminiService } from './services/geminiService';
+import Sidebar from './components/Sidebar';
+import DiagramRenderer from './components/DiagramRenderer';
 
-const INITIAL_GRAPH: BlueprintGraphData = {
-  nodes: [],
-  edges: []
-};
-
-// Fixed: Correctly declare or augment the global AIStudio type to match the platform's expectations
-declare global {
-  interface AIStudio {
-    hasSelectedApiKey: () => Promise<boolean>;
-    openSelectKey: () => Promise<void>;
-  }
-
-  interface Window {
-    aistudio: AIStudio;
-  }
-}
+const INITIAL_DIAGRAM_CODE = `classDiagram
+    class AGameCharacter {
+        +UCharacterMovementComponent* Movement
+        +float Health
+        +TakeDamage(Damage)
+        +Move(Input)
+    }
+    class APlayerCharacter {
+        +UCameraComponent* Camera
+        +Inventory Inventory
+    }
+    class AEnemyCharacter {
+        +UBehaviorTree* AIBehavior
+    }
+    AGameCharacter <|-- APlayerCharacter
+    AGameCharacter <|-- AEnemyCharacter`;
 
 const App: React.FC = () => {
-  const [prompt, setPrompt] = useState('Create a complex character ability system with cooldown and mana check.');
-  const [graph, setGraph] = useState<BlueprintGraphData>(INITIAL_GRAPH);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [showImportModal, setShowImportModal] = useState(false);
-  const [importValue, setImportValue] = useState('');
+  const [diagrams, setDiagrams] = useState<Diagram[]>(() => {
+    const saved = localStorage.getItem('unreal-diagrams');
+    if (saved) return JSON.parse(saved);
+    return [{
+      id: 'default',
+      name: 'Base Hierarchy',
+      type: DiagramType.CLASS,
+      code: INITIAL_DIAGRAM_CODE,
+      lastModified: Date.now()
+    }];
+  });
   
-  const [isLiveSync, setIsLiveSync] = useState(true);
-  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'error'>('idle');
-  const [needsKey, setNeedsKey] = useState(false);
-  
-  const lastSyncHash = useRef<string>('');
-  const graphRef = useRef<GraphRef>(null);
+  const [activeId, setActiveId] = useState('default');
+  const [sourceCode, setSourceCode] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [showEditor, setShowEditor] = useState(false);
 
-  const checkKey = async () => {
-    if (!process.env.API_KEY) {
-      const hasKey = await window.aistudio.hasSelectedApiKey();
-      if (!hasKey) {
-        setNeedsKey(true);
-        return false;
-      }
-    }
-    setNeedsKey(false);
-    return true;
+  useEffect(() => {
+    localStorage.setItem('unreal-diagrams', JSON.stringify(diagrams));
+  }, [diagrams]);
+
+  const activeDiagram = diagrams.find(d => d.id === activeId) || diagrams[0];
+
+  const updateActiveDiagramCode = (newCode: string) => {
+    setDiagrams(prev => prev.map(d => 
+      d.id === activeId ? { ...d, code: newCode, lastModified: Date.now() } : d
+    ));
   };
 
-  const handleSelectKey = async () => {
-    await window.aistudio.openSelectKey();
-    setNeedsKey(false);
-    // Proceed regardless of race condition as per instructions
-    handleGenerate();
-  };
-
-  const handleGenerate = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!prompt.trim()) return;
-
-    const hasKey = await checkKey();
-    if (!hasKey && !process.env.API_KEY) return;
-
-    setLoading(true);
-    setError(null);
+  const handleGenerate = async () => {
+    if (!sourceCode.trim()) return;
+    setIsGenerating(true);
     try {
-      // Create a new GoogleGenAI instance right before making an API call to ensure it uses the latest key
-      const result = await generateBlueprint(prompt);
-      if (result && result.nodes) {
-        setGraph(result);
-        setTimeout(() => graphRef.current?.centerView(), 500);
-      }
-    } catch (err: any) {
-      if (err.message === "API_KEY_NOT_FOUND") {
-        setError("API Key inválida ou não encontrada. Por favor, selecione novamente.");
-        setNeedsKey(true);
-      } else {
-        setError(err.message || "Falha na geração. Verifique sua conexão e API Key.");
-      }
+      const newDiagramCode = await geminiService.generateDiagramFromCode(sourceCode);
+      updateActiveDiagramCode(newDiagramCode);
+      setShowEditor(false);
+    } catch (err) {
+      alert("Generation failed. Check API key.");
     } finally {
-      setLoading(false);
+      setIsGenerating(false);
     }
   };
 
-  useEffect(() => {
-    if (!isLiveSync) return;
-    const pollSync = async () => {
-      try {
-        const response = await fetch('/api/sync');
-        if (response.ok) {
-          const data = await response.json();
-          if (data && data.nodes) {
-            const hash = JSON.stringify(data);
-            if (hash !== lastSyncHash.current) {
-              lastSyncHash.current = hash;
-              setGraph(data);
-              setSyncStatus('syncing');
-              setTimeout(() => {
-                setSyncStatus('idle');
-                graphRef.current?.centerView();
-              }, 1000);
-            }
-          }
-        }
-      } catch (e) {
-        setSyncStatus('error');
-      }
-    };
-    const interval = setInterval(pollSync, 2000);
-    return () => clearInterval(interval);
-  }, [isLiveSync]);
+  const handleAnalyze = async () => {
+    setIsAnalyzing(true);
+    try {
+      const result = await geminiService.analyzeArchitecture(activeDiagram.code);
+      setAnalysis(result);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
-  useEffect(() => {
-    const init = async () => {
-      const ok = await checkKey();
-      if (ok || process.env.API_KEY) {
-        handleGenerate();
-      }
+  const createNewDiagram = () => {
+    const newId = Math.random().toString(36).substr(2, 9);
+    const newDiag: Diagram = {
+      id: newId,
+      name: 'New Diagram ' + (diagrams.length + 1),
+      type: DiagramType.CLASS,
+      code: INITIAL_DIAGRAM_CODE,
+      lastModified: Date.now()
     };
-    init();
-  }, []);
+    setDiagrams([...diagrams, newDiag]);
+    setActiveId(newId);
+    setAnalysis(null);
+  };
+
+  const deleteDiagram = (id: string) => {
+    if (diagrams.length <= 1) return;
+    const next = diagrams.filter(d => d.id !== id);
+    setDiagrams(next);
+    if (activeId === id) setActiveId(next[0].id);
+  };
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#121212] text-gray-200 font-sans">
-      <header className="h-14 border-b border-white/10 flex items-center justify-between px-6 bg-[#1a1a1a] z-50">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center font-bold text-white">U</div>
-          <div className="flex flex-col">
-            <h1 className="font-bold text-sm leading-tight text-white">Unreal <span className="text-blue-400">Blueprint</span></h1>
-            <span className="text-[8px] text-gray-500 uppercase tracking-widest font-black">Gemini 3 Pro Engine</span>
-          </div>
-        </div>
-        
-        <form onSubmit={handleGenerate} className="flex-1 max-w-xl mx-8 flex items-center gap-2">
-          <input
-            type="text"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Describe the blueprint logic..."
-            className="w-full bg-[#0b0b0b] border border-white/10 rounded-lg px-4 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none placeholder:text-gray-600"
-          />
-          <button
-            type="submit"
-            disabled={loading || needsKey}
-            className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 px-4 py-2 rounded-lg text-[10px] font-bold uppercase transition-all whitespace-nowrap"
-          >
-            {loading ? 'Processing...' : 'Generate'}
-          </button>
-        </form>
+    <div className="flex h-screen w-full bg-[#0a0a0c] text-zinc-200 overflow-hidden font-sans">
+      <Sidebar 
+        diagrams={diagrams} 
+        activeId={activeId} 
+        onSelect={setActiveId} 
+        onNew={createNewDiagram}
+        onDelete={deleteDiagram}
+      />
 
-        <div className="flex items-center gap-4">
-          <button 
-            onClick={() => graphRef.current?.centerView()}
-            className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-gray-400 transition-colors"
-            title="Recenter View"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
-            </svg>
-          </button>
-          
-          <div className={`px-2 py-1 rounded border text-[9px] font-bold transition-all ${syncStatus === 'syncing' ? 'bg-blue-900 border-blue-500 text-white animate-pulse' : 'bg-black border-white/10 text-gray-500'}`}>
-            MCP SYNC
-          </div>
-
-          <button
-            onClick={() => setShowImportModal(true)}
-            className="border border-white/10 text-[10px] px-4 py-2 rounded-lg hover:bg-white/5 uppercase font-bold"
-          >
-            JSON
-          </button>
-        </div>
-      </header>
-
-      <main className="flex-1 relative">
-        {error && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[60] bg-red-900/90 border border-red-500 text-white px-4 py-2 rounded-lg text-xs shadow-2xl flex items-center gap-3 backdrop-blur-md">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-            </svg>
-            {error}
-            <button onClick={() => setError(null)} className="ml-2 hover:text-red-200">✕</button>
-          </div>
-        )}
-
-        {needsKey && (
-          <div className="absolute inset-0 z-[70] bg-black/80 backdrop-blur-xl flex items-center justify-center p-8">
-            <div className="max-w-md w-full bg-[#1a1a1a] border border-white/10 rounded-2xl p-8 text-center flex flex-col items-center gap-6 shadow-2xl">
-              <div className="w-16 h-16 bg-blue-600/20 rounded-full flex items-center justify-center">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2">
-                  <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3L15.5 7.5z" />
-                </svg>
-              </div>
-              <div>
-                <h2 className="text-xl font-bold text-white mb-2">API Key Required</h2>
-                <p className="text-sm text-gray-400">
-                  To generate professional blueprints with Gemini 3 Pro, you need to select a paid project API key.
-                </p>
-                <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="text-xs text-blue-400 hover:underline mt-2 block">
-                  Learn about billing & keys
-                </a>
-              </div>
-              <button 
-                onClick={handleSelectKey}
-                className="w-full bg-blue-600 hover:bg-blue-500 py-3 rounded-xl font-bold uppercase text-xs tracking-widest transition-all shadow-lg shadow-blue-600/20"
-              >
-                Select API Key
-              </button>
-            </div>
-          </div>
-        )}
-
-        {(loading || syncStatus === 'syncing') && (
-          <div className="absolute inset-0 z-50 bg-black/40 flex items-center justify-center backdrop-blur-sm">
-             <div className="flex flex-col items-center gap-4 bg-[#1a1a1a] border border-white/10 p-8 rounded-2xl shadow-2xl">
-                <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent animate-spin rounded-full"></div>
-                <div className="flex flex-col items-center gap-1">
-                  <span className="text-[11px] text-white font-bold uppercase tracking-widest">Generating Complex Logic</span>
-                  <span className="text-[9px] text-gray-500 italic">Thinking budget: 4000 tokens...</span>
-                </div>
-             </div>
-          </div>
-        )}
-        <BlueprintGraph ref={graphRef} graph={graph} />
-      </main>
-
-      {showImportModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 md:p-12">
-          <div className="absolute inset-0 bg-black/90 backdrop-blur-md" onClick={() => setShowImportModal(false)}></div>
-          <div className="relative w-full max-w-3xl bg-[#1a1a1a] rounded-2xl p-6 border border-white/10 flex flex-col gap-4 shadow-2xl">
-            <div className="flex justify-between items-center">
-              <h3 className="text-sm font-bold uppercase tracking-widest text-gray-400">Blueprint Data (JSON)</h3>
-              <button onClick={() => setShowImportModal(false)} className="text-gray-500 hover:text-white">✕</button>
-            </div>
-            <textarea
-              value={importValue || JSON.stringify(graph, null, 2)}
-              onChange={(e) => setImportValue(e.target.value)}
-              className="flex-1 h-[60vh] bg-black p-4 font-mono text-[11px] rounded-xl border border-white/5 focus:border-blue-500 outline-none text-blue-300"
+      <main className="flex-1 flex flex-col relative h-full">
+        {/* Header */}
+        <header className="h-16 border-b border-zinc-800 flex items-center justify-between px-8 bg-[#0a0a0c]/80 backdrop-blur-md z-10 shrink-0">
+          <div className="flex items-center space-x-4">
+            <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center font-black text-white italic">U</div>
+            <input 
+              value={activeDiagram.name}
+              onChange={(e) => setDiagrams(prev => prev.map(d => d.id === activeId ? { ...d, name: e.target.value } : d))}
+              className="bg-transparent border-none focus:ring-0 text-lg font-semibold text-zinc-100 w-64"
             />
+          </div>
+          
+          <div className="flex items-center space-x-3">
             <button 
-              onClick={() => {
-                try { 
-                  const parsed = JSON.parse(importValue || JSON.stringify(graph));
-                  setGraph(parsed); 
-                  setShowImportModal(false); 
-                  setTimeout(() => graphRef.current?.centerView(), 200);
-                } catch(e) { alert("Invalid JSON Structure"); }
-              }}
-              className="bg-blue-600 hover:bg-blue-500 p-3 rounded-xl font-bold uppercase text-xs transition-all"
+              onClick={() => setShowEditor(!showEditor)}
+              className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors"
             >
-              Apply Blueprint
+              {showEditor ? 'Hide Code' : 'Generate from Code'}
+            </button>
+            <button 
+              onClick={handleAnalyze}
+              disabled={isAnalyzing}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-blue-900/20 disabled:opacity-50"
+            >
+              {isAnalyzing ? 'Analyzing...' : 'Analyze Architecture'}
             </button>
           </div>
+        </header>
+
+        {/* Content Area */}
+        <div className="flex-1 flex overflow-hidden p-6 gap-6">
+          {/* Main Visualizer */}
+          <div className={`flex-1 transition-all duration-500 ease-in-out flex flex-col ${showEditor ? 'w-1/2' : 'w-full'}`}>
+            <DiagramRenderer code={activeDiagram.code} type={activeDiagram.type} />
+          </div>
+
+          {/* AI Generator Panel */}
+          {showEditor && (
+            <div className="w-[450px] bg-[#0f0f12] border border-zinc-800 rounded-xl flex flex-col shadow-2xl animate-in slide-in-from-right duration-300">
+              <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
+                <span className="text-sm font-bold text-zinc-400 uppercase tracking-wider">Source Analysis</span>
+                <button onClick={() => setShowEditor(false)} className="text-zinc-600 hover:text-white">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" strokeWidth={2} /></svg>
+                </button>
+              </div>
+              <div className="p-4 flex-1 flex flex-col space-y-4 overflow-hidden">
+                <div className="flex-1 flex flex-col">
+                  <label className="text-xs text-zinc-500 mb-2 font-mono">Input Unreal C++ / Header / Blueprint Spec:</label>
+                  <textarea 
+                    value={sourceCode}
+                    onChange={(e) => setSourceCode(e.target.value)}
+                    placeholder="class AMyCharacter : public ACharacter { ..."
+                    className="flex-1 bg-[#0a0a0c] border border-zinc-800 rounded-lg p-4 font-mono text-sm text-blue-400 focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none resize-none"
+                  />
+                </div>
+                <button 
+                  onClick={handleGenerate}
+                  disabled={isGenerating}
+                  className="w-full py-3 bg-blue-600 rounded-lg font-semibold hover:bg-blue-500 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
+                >
+                  {isGenerating ? (
+                    <><div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" /><span>Generating...</span></>
+                  ) : (
+                    <><span>Reconstruct Hierarchy</span></>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Analysis Sidebar (Floating right) */}
+          {analysis && !showEditor && (
+            <div className="w-80 bg-[#0f0f12] border border-zinc-800 rounded-xl p-6 overflow-y-auto animate-in fade-in duration-500 shadow-2xl">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="font-bold text-zinc-100 flex items-center">
+                  <svg className="w-4 h-4 mr-2 text-yellow-400" fill="currentColor" viewBox="0 0 20 20"><path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zM8 16v-1a1 1 0 112 0v1a1 1 0 11-2 0zM13.536 15.657l.707-.707a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414zM16.464 13.536l-.707-.707a1 1 0 10-1.414 1.414l.707.707a1 1 0 001.414-1.414z" /></svg>
+                  Architect Review
+                </h3>
+                <button onClick={() => setAnalysis(null)} className="text-zinc-600 hover:text-white">&times;</button>
+              </div>
+
+              <div className="space-y-6">
+                <div>
+                  <div className="flex justify-between text-xs font-mono text-zinc-500 mb-2">
+                    <span>Complexity</span>
+                    <span>{analysis.complexityScore}/10</span>
+                  </div>
+                  <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-blue-500 transition-all duration-1000" 
+                      style={{ width: `${analysis.complexityScore * 10}%` }} 
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3">Suggestions</h4>
+                  <ul className="space-y-3">
+                    {analysis.refactorSuggestions.map((s: string, i: number) => (
+                      <li key={i} className="text-sm text-zinc-400 bg-zinc-900/50 p-3 rounded-lg border-l-2 border-blue-600">
+                        {s}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div>
+                  <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3">Issues</h4>
+                  <ul className="space-y-3">
+                    {analysis.potentialIssues.map((s: string, i: number) => (
+                      <li key={i} className="text-sm text-zinc-400 bg-red-900/10 p-3 rounded-lg border-l-2 border-red-600">
+                        {s}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+        
+        {/* Quick Toolbar (Sticky Bottom) */}
+        <div className="h-12 border-t border-zinc-800 bg-[#0a0a0c] px-8 flex items-center justify-between text-[11px] font-mono text-zinc-600 shrink-0">
+          <div className="flex space-x-6">
+            <span>SYNC: OK</span>
+            <span>MODEL: GEMINI-3-PRO</span>
+            <span>NODES: {activeDiagram.code.split('\n').length}</span>
+          </div>
+          <div className="flex space-x-4">
+            <span className="text-blue-500/80 cursor-pointer hover:text-blue-400">Export SVG</span>
+            <span className="text-blue-500/80 cursor-pointer hover:text-blue-400">Download .mermaid</span>
+          </div>
+        </div>
+      </main>
     </div>
   );
 };

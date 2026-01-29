@@ -1,53 +1,23 @@
-
-import { defineConfig } from 'vite';
+import path from 'path';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
-let lastGraph = null;
-
-export default defineConfig({
-  plugins: [
-    react(),
-    {
-      name: 'blueprint-sync-api',
-      configureServer(server) {
-        server.middlewares.use((req, res, next) => {
-          if (req.url === '/api/sync') {
-            if (req.method === 'POST') {
-              let body = '';
-              req.on('data', chunk => { body += chunk; });
-              req.on('end', () => {
-                try {
-                  const parsed = JSON.parse(body);
-                  if (parsed && Array.isArray(parsed.nodes)) {
-                    lastGraph = {
-                      nodes: parsed.nodes || [],
-                      edges: parsed.edges || []
-                    };
-                    res.statusCode = 200;
-                    res.end(JSON.stringify({ status: 'ok' }));
-                  } else {
-                    res.statusCode = 400;
-                    res.end('Invalid Blueprint Structure');
-                  }
-                } catch (e) {
-                  res.statusCode = 400;
-                  res.end('Invalid JSON');
-                }
-              });
-              return;
-            }
-            if (req.method === 'GET') {
-              res.setHeader('Content-Type', 'application/json');
-              res.end(JSON.stringify(lastGraph));
-              return;
-            }
-          }
-          next();
-        });
+export default defineConfig(({ mode }) => {
+    const env = loadEnv(mode, '.', '');
+    return {
+      server: {
+        port: 3000,
+        host: '0.0.0.0',
+      },
+      plugins: [react()],
+      define: {
+        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
+      },
+      resolve: {
+        alias: {
+          '@': path.resolve(__dirname, '.'),
+        }
       }
-    }
-  ],
-  define: {
-    'process.env.API_KEY': JSON.stringify(process.env.API_KEY || '')
-  }
+    };
 });

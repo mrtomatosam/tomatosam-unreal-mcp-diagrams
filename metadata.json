@@ -1,6 +1,5 @@
-
 {
-  "name": "Unreal Script Visualizer",
-  "description": "An AI-powered Unreal Engine Blueprint diagram generator that transforms natural language descriptions into professional-looking visual script graphs.",
+  "name": "Unreal Architect Pro",
+  "description": "A high-performance visualizer and enhancer for Unreal Engine MCP diagrams, allowing developers to generate, analyze, and refactor Actor and Blueprint hierarchies using Gemini 3 Pro.",
   "requestFramePermissions": []
 }

@@ -1,39 +1,21 @@
 
-export enum PinType {
-  EXEC = 'EXEC',
-  BOOLEAN = 'BOOLEAN',
-  INTEGER = 'INTEGER',
-  FLOAT = 'FLOAT',
-  STRING = 'STRING',
-  VECTOR = 'VECTOR',
-  OBJECT = 'OBJECT',
-  EVENT = 'EVENT'
+export enum DiagramType {
+  CLASS = 'classDiagram',
+  SEQUENCE = 'sequenceDiagram',
+  STATE = 'stateDiagram',
+  FLOW = 'flowchart TD'
 }
 
-export interface BlueprintPin {
+export interface Diagram {
   id: string;
   name: string;
-  type: PinType;
+  type: DiagramType;
+  code: string;
+  lastModified: number;
 }
 
-export interface BlueprintNode {
-  id: string;
-  title: string;
-  type: 'EVENT' | 'FUNCTION' | 'VARIABLE' | 'CONTROL_FLOW';
-  inputs: BlueprintPin[];
-  outputs: BlueprintPin[];
-  position: { x: number; y: number };
-}
-
-export interface BlueprintEdge {
-  id: string;
-  fromNodeId: string;
-  fromPinId: string;
-  toNodeId: string;
-  toPinId: string;
-}
-
-export interface BlueprintGraph {
-  nodes: BlueprintNode[];
-  edges: BlueprintEdge[];
+export interface AnalysisResult {
+  refactorSuggestions: string[];
+  complexityScore: number;
+  potentialIssues: string[];
 }
