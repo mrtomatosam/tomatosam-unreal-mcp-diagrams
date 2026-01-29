@@ -6,7 +6,6 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { GoogleGenAI, Type } from "@google/genai";
-// Explicitly import process from node:process to resolve typing conflicts for process.exit
 import process from "node:process";
 
 // Reuse the schema from the frontend for consistency
@@ -72,7 +71,7 @@ const blueprintSchema = {
 const server = new Server(
   {
     name: "unreal-blueprint-generator",
-    version: "1.0.0",
+    version: "1.1.0",
   },
   {
     capabilities: {
@@ -86,7 +85,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       {
         name: "generate_unreal_blueprint",
-        description: "Generates a structured JSON representation of an Unreal Engine Blueprint visual script graph based on a natural language description.",
+        description: "Generates a structured JSON representation of an Unreal Engine Blueprint visual script graph. The graph is automatically pushed to the visualizer web app.",
         inputSchema: {
           type: "object",
           properties: {
@@ -101,6 +100,20 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     ],
   };
 });
+
+async function broadcastToApp(data: any) {
+  try {
+    // Attempt to push to the local Vite sync endpoint
+    const response = await fetch('http://localhost:5173/api/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return response.ok;
+  } catch (e) {
+    return false;
+  }
+}
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (request.params.name !== "generate_unreal_blueprint") {
@@ -121,11 +134,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       },
     });
 
+    const blueprintData = JSON.parse(response.text || "{}");
+    const syncSuccess = await broadcastToApp(blueprintData);
+
     return {
       content: [
         {
           type: "text",
-          text: `Successfully generated Blueprint data for: ${prompt}. You can visualize this JSON in the Unreal Script Visualizer web app.`,
+          text: syncSuccess 
+            ? `Successfully generated Blueprint for: ${prompt}. The visualizer has been updated automatically!`
+            : `Generated Blueprint for: ${prompt}. (Automatic sync failed - ensure the web app is running at http://localhost:5173). You can also paste the JSON manually.`,
         },
         {
           type: "text",
@@ -149,11 +167,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("Unreal Blueprint MCP Server running on stdio");
+  console.error("Unreal Blueprint MCP Server (Sync-Enabled) running on stdio");
 }
 
 main().catch((error) => {
   console.error("Server error:", error);
-  // Using imported process to ensure .exit is available
   process.exit(1);
 });
