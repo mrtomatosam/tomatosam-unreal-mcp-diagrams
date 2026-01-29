@@ -78,26 +78,17 @@ const blueprintSchema = {
 
 export const generateBlueprint = async (prompt: string): Promise<BlueprintGraph> => {
   try {
-    // Fixed: Initializing GoogleGenAI inside the function with correct parameter format to ensure latest API key usage
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
-      contents: `Generate an Unreal Engine Blueprint visual scripting graph for the following requirement: "${prompt}". 
-      Make sure to include appropriate node types: 
-      - EVENT (e.g., BeginPlay, OnComponentHit)
-      - FUNCTION (e.g., PrintString, SetActorLocation)
-      - CONTROL_FLOW (e.g., Branch, Delay)
-      - VARIABLE (e.g., Get Player Health).
-      Ensure execution pins (EXEC type) are connected correctly in sequence.
-      Position nodes realistically from left to right.`,
+      model: 'gemini-3-flash-preview', // Consistent with MCP
+      contents: `Generate an Unreal Engine Blueprint visual scripting graph for: "${prompt}". 
+      Position nodes realistically. Include EXEC pins and connections.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: blueprintSchema,
-        thinkingConfig: { thinkingBudget: 4000 }
       },
     });
 
-    // Fixed: Accessing response.text directly (property, not method)
     if (!response.text) {
       throw new Error("No response from Gemini");
     }
