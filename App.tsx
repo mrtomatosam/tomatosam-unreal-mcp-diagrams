@@ -7,16 +7,16 @@ import DiagramRenderer from './components/DiagramRenderer.tsx';
 
 const INITIAL_DIAGRAM_CODE = `classDiagram
     class AActor {
-        +GetWorld()
+        +GetWorld() World
     }
     class AGameCharacter {
-        +UCharacterMovementComponent* Movement
+        +MovementComponent Movement
         +float Health
         +TakeDamage(Damage)
         +Move(Input)
     }
     class APlayerCharacter {
-        +UCameraComponent* Camera
+        +CameraComponent Camera
         +Inventory Inventory
     }
     AActor <|-- AGameCharacter
