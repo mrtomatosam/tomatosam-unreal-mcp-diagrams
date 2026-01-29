@@ -48,7 +48,8 @@ const blueprintSchema = {
               y: { type: Type.NUMBER }
             }
           }
-        }
+        },
+        required: ['id', 'title', 'type', 'inputs', 'outputs', 'position']
       }
     },
     edges: {
@@ -61,16 +62,18 @@ const blueprintSchema = {
           fromPinId: { type: Type.STRING },
           toNodeId: { type: Type.STRING },
           toPinId: { type: Type.STRING }
-        }
+        },
+        required: ['id', 'fromNodeId', 'fromPinId', 'toNodeId', 'toPinId']
       }
     }
-  }
+  },
+  required: ['nodes', 'edges']
 };
 
 const server = new Server(
   {
     name: "unreal-blueprint-generator",
-    version: "1.4.0",
+    version: "1.5.0",
   },
   {
     capabilities: {
@@ -84,13 +87,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       {
         name: "generate_unreal_blueprint",
-        description: "Gera um gráfico de script visual do Unreal Engine e atualiza automaticamente o visualizador web.",
+        description: "Gera um gráfico de script visual do Unreal Engine profissional e completo.",
         inputSchema: {
           type: "object",
           properties: {
             prompt: {
               type: "string",
-              description: "Descrição da lógica (ex: 'Sistema de pulo duplo com stamina')",
+              description: "Descrição detalhada da lógica desejada.",
             },
           },
           required: ["prompt"],
@@ -109,7 +112,6 @@ async function broadcastToApp(data: any) {
     });
     return response.ok;
   } catch (e) {
-    console.error("[MCP] Falha ao sincronizar: O app web está rodando em http://localhost:5173?");
     return false;
   }
 }
@@ -123,26 +125,30 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const apiKey = process.env.API_KEY;
 
   if (!apiKey) {
-    return {
-      content: [{ type: "text", text: "Erro: API_KEY faltando na configuração do Claude." }],
-      isError: true,
-    };
+    return { content: [{ type: "text", text: "Erro: API_KEY faltando." }], isError: true };
   }
 
   const ai = new GoogleGenAI({ apiKey });
 
   try {
+    // Usando Gemini 3 Pro para máxima estabilidade e janela de contexto
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `Gere um gráfico de Blueprint do Unreal Engine para: "${prompt}". 
-      Retorne APENAS JSON estruturado. Inclua posições X/Y realistas, pinos de EXEC e tipos de dados (BOOLEAN, FLOAT, etc).`,
+      model: 'gemini-3-pro-preview',
+      contents: `Gere um gráfico de Unreal Engine Blueprint completo para: "${prompt}".
+      REGRAS CRÍTICAS:
+      1. Use coordenadas X/Y em uma grade de 400px (ex: 0, 400, 800) para evitar sobreposição.
+      2. Garanta que TODOS os pinos de EXEC estejam conectados para formar um fluxo lógico.
+      3. O JSON deve ser COMPLETO e VÁLIDO. Não abrevie nem corte a resposta.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: blueprintSchema,
+        thinkingConfig: { thinkingBudget: 4000 },
+        maxOutputTokens: 10000 // Aumentado para evitar truncamento
       },
     });
 
-    const blueprintData = JSON.parse(response.text || "{}");
+    const text = response.text || "{}";
+    const blueprintData = JSON.parse(text);
     const syncSuccess = await broadcastToApp(blueprintData);
 
     return {
@@ -150,13 +156,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         {
           type: "text",
           text: syncSuccess 
-            ? `Blueprint gerado e enviado para o visualizador!`
-            : `Blueprint gerado, mas o visualizador não foi encontrado em :5173. Cole o JSON manualmente se necessário.`,
+            ? `Blueprint gerado com sucesso via Gemini 3 Pro e enviado ao visualizador!`
+            : `Blueprint gerado, mas o visualizador não respondeu.`,
         },
-        {
-          type: "text",
-          text: response.text,
-        },
+        { type: "text", text: text },
       ],
     };
   } catch (error: any) {
@@ -171,10 +174,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("[MCP] Servidor Unreal Blueprint rodando via Stdio.");
+  console.error("[MCP] Servidor v1.5.0 (Gemini 3 Pro) ativo.");
 }
 
-main().catch((error) => {
-  console.error("[MCP] Erro fatal:", error);
-  process.exit(1);
-});
+main().catch(process.exit);

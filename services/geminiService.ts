@@ -12,10 +12,7 @@ const blueprintSchema = {
         properties: {
           id: { type: Type.STRING },
           title: { type: Type.STRING },
-          type: { 
-            type: Type.STRING,
-            enum: ['EVENT', 'FUNCTION', 'VARIABLE', 'CONTROL_FLOW']
-          },
+          type: { type: Type.STRING, enum: ['EVENT', 'FUNCTION', 'VARIABLE', 'CONTROL_FLOW'] },
           inputs: {
             type: Type.ARRAY,
             items: {
@@ -23,10 +20,7 @@ const blueprintSchema = {
               properties: {
                 id: { type: Type.STRING },
                 name: { type: Type.STRING },
-                type: { 
-                  type: Type.STRING,
-                  enum: Object.values(PinType)
-                }
+                type: { type: Type.STRING, enum: Object.values(PinType) }
               },
               required: ['id', 'name', 'type']
             }
@@ -38,10 +32,7 @@ const blueprintSchema = {
               properties: {
                 id: { type: Type.STRING },
                 name: { type: Type.STRING },
-                type: { 
-                  type: Type.STRING,
-                  enum: Object.values(PinType)
-                }
+                type: { type: Type.STRING, enum: Object.values(PinType) }
               },
               required: ['id', 'name', 'type']
             }
@@ -80,22 +71,21 @@ export const generateBlueprint = async (prompt: string): Promise<BlueprintGraph>
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `Gere um gráfico de Blueprint do Unreal Engine para: "${prompt}". 
-      Posicione os nós de forma lógica e organizada. Use pinos de EXEC para fluxo e tipos corretos para dados.`,
+      model: 'gemini-3-pro-preview',
+      contents: `Crie um gráfico de Blueprint do Unreal Engine para: "${prompt}".
+      Planeje o layout horizontalmente da esquerda para a direita. Use pinos de EXEC para conectar o fluxo de controle.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: blueprintSchema,
+        thinkingConfig: { thinkingBudget: 2000 },
+        maxOutputTokens: 8000
       },
     });
 
-    if (!response.text) {
-      throw new Error("Resposta vazia da IA");
-    }
-
+    if (!response.text) throw new Error("Resposta vazia da IA");
     return JSON.parse(response.text) as BlueprintGraph;
   } catch (error) {
-    console.error("Erro ao gerar blueprint via Web:", error);
+    console.error("Erro ao gerar via Web:", error);
     throw error;
   }
 };
