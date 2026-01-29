@@ -1,11 +1,14 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { Diagram, DiagramType, AnalysisResult } from './types';
-import { geminiService } from './services/geminiService';
-import Sidebar from './components/Sidebar';
-import DiagramRenderer from './components/DiagramRenderer';
+import React, { useState, useEffect } from 'react';
+import { Diagram, DiagramType, AnalysisResult } from './types.ts';
+import { geminiService } from './services/geminiService.ts';
+import Sidebar from './components/Sidebar.tsx';
+import DiagramRenderer from './components/DiagramRenderer.tsx';
 
 const INITIAL_DIAGRAM_CODE = `classDiagram
+    class AActor {
+        +GetWorld()
+    }
     class AGameCharacter {
         +UCharacterMovementComponent* Movement
         +float Health
@@ -16,19 +19,20 @@ const INITIAL_DIAGRAM_CODE = `classDiagram
         +UCameraComponent* Camera
         +Inventory Inventory
     }
-    class AEnemyCharacter {
-        +UBehaviorTree* AIBehavior
-    }
-    AGameCharacter <|-- APlayerCharacter
-    AGameCharacter <|-- AEnemyCharacter`;
+    AActor <|-- AGameCharacter
+    AGameCharacter <|-- APlayerCharacter`;
 
 const App: React.FC = () => {
   const [diagrams, setDiagrams] = useState<Diagram[]>(() => {
-    const saved = localStorage.getItem('unreal-diagrams');
-    if (saved) return JSON.parse(saved);
+    try {
+      const saved = localStorage.getItem('unreal-diagrams');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error("Failed to load diagrams from storage", e);
+    }
     return [{
       id: 'default',
-      name: 'Base Hierarchy',
+      name: 'Game Hierarchy',
       type: DiagramType.CLASS,
       code: INITIAL_DIAGRAM_CODE,
       lastModified: Date.now()
@@ -41,6 +45,7 @@ const App: React.FC = () => {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showEditor, setShowEditor] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     localStorage.setItem('unreal-diagrams', JSON.stringify(diagrams));
@@ -57,12 +62,15 @@ const App: React.FC = () => {
   const handleGenerate = async () => {
     if (!sourceCode.trim()) return;
     setIsGenerating(true);
+    setError(null);
     try {
       const newDiagramCode = await geminiService.generateDiagramFromCode(sourceCode);
-      updateActiveDiagramCode(newDiagramCode);
-      setShowEditor(false);
+      if (newDiagramCode) {
+        updateActiveDiagramCode(newDiagramCode);
+        setShowEditor(false);
+      }
     } catch (err) {
-      alert("Generation failed. Check API key.");
+      setError("Falha ao gerar diagrama. Verifique sua conexão ou API Key.");
     } finally {
       setIsGenerating(false);
     }
@@ -70,11 +78,12 @@ const App: React.FC = () => {
 
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
+    setError(null);
     try {
       const result = await geminiService.analyzeArchitecture(activeDiagram.code);
       setAnalysis(result);
     } catch (err) {
-      console.error(err);
+      setError("Erro ao analisar arquitetura.");
     } finally {
       setIsAnalyzing(false);
     }
@@ -84,7 +93,7 @@ const App: React.FC = () => {
     const newId = Math.random().toString(36).substr(2, 9);
     const newDiag: Diagram = {
       id: newId,
-      name: 'New Diagram ' + (diagrams.length + 1),
+      name: 'Novo Diagrama',
       type: DiagramType.CLASS,
       code: INITIAL_DIAGRAM_CODE,
       lastModified: Date.now()
@@ -101,6 +110,10 @@ const App: React.FC = () => {
     if (activeId === id) setActiveId(next[0].id);
   };
 
+  if (!activeDiagram) {
+    return <div className="h-screen w-full bg-[#0a0a0c] flex items-center justify-center text-white">Carregando...</div>;
+  }
+
   return (
     <div className="flex h-screen w-full bg-[#0a0a0c] text-zinc-200 overflow-hidden font-sans">
       <Sidebar 
@@ -112,138 +125,139 @@ const App: React.FC = () => {
       />
 
       <main className="flex-1 flex flex-col relative h-full">
-        {/* Header */}
+        {error && (
+          <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 bg-red-600 text-white px-6 py-2 rounded-full shadow-2xl animate-bounce">
+            {error}
+            <button onClick={() => setError(null)} className="ml-4 font-bold">&times;</button>
+          </div>
+        )}
+
         <header className="h-16 border-b border-zinc-800 flex items-center justify-between px-8 bg-[#0a0a0c]/80 backdrop-blur-md z-10 shrink-0">
           <div className="flex items-center space-x-4">
-            <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center font-black text-white italic">U</div>
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-lg flex items-center justify-center font-black text-white italic shadow-lg shadow-blue-900/40">U</div>
             <input 
               value={activeDiagram.name}
               onChange={(e) => setDiagrams(prev => prev.map(d => d.id === activeId ? { ...d, name: e.target.value } : d))}
-              className="bg-transparent border-none focus:ring-0 text-lg font-semibold text-zinc-100 w-64"
+              className="bg-transparent border-none focus:ring-0 text-xl font-bold text-zinc-100 w-64 hover:bg-zinc-800/50 rounded transition-colors px-2"
             />
           </div>
           
           <div className="flex items-center space-x-3">
             <button 
               onClick={() => setShowEditor(!showEditor)}
-              className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors"
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${showEditor ? 'bg-zinc-100 text-zinc-900' : 'bg-zinc-800 text-zinc-100 hover:bg-zinc-700'}`}
             >
-              {showEditor ? 'Hide Code' : 'Generate from Code'}
+              {showEditor ? 'Fechar Editor' : 'Gerar do Código'}
             </button>
             <button 
               onClick={handleAnalyze}
               disabled={isAnalyzing}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-blue-900/20 disabled:opacity-50"
+              className="px-6 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-bold transition-all shadow-lg shadow-blue-900/30 disabled:opacity-50 flex items-center gap-2"
             >
-              {isAnalyzing ? 'Analyzing...' : 'Analyze Architecture'}
+              {isAnalyzing && <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin" />}
+              {isAnalyzing ? 'Analisando...' : 'Revisão do Arquiteto'}
             </button>
           </div>
         </header>
 
-        {/* Content Area */}
         <div className="flex-1 flex overflow-hidden p-6 gap-6">
-          {/* Main Visualizer */}
-          <div className={`flex-1 transition-all duration-500 ease-in-out flex flex-col ${showEditor ? 'w-1/2' : 'w-full'}`}>
+          <div className={`flex-1 transition-all duration-500 ease-in-out flex flex-col ${showEditor ? 'opacity-40 blur-sm scale-95 pointer-events-none' : 'opacity-100'}`}>
             <DiagramRenderer code={activeDiagram.code} type={activeDiagram.type} />
           </div>
 
-          {/* AI Generator Panel */}
           {showEditor && (
-            <div className="w-[450px] bg-[#0f0f12] border border-zinc-800 rounded-xl flex flex-col shadow-2xl animate-in slide-in-from-right duration-300">
-              <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
-                <span className="text-sm font-bold text-zinc-400 uppercase tracking-wider">Source Analysis</span>
-                <button onClick={() => setShowEditor(false)} className="text-zinc-600 hover:text-white">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" strokeWidth={2} /></svg>
-                </button>
-              </div>
-              <div className="p-4 flex-1 flex flex-col space-y-4 overflow-hidden">
-                <div className="flex-1 flex flex-col">
-                  <label className="text-xs text-zinc-500 mb-2 font-mono">Input Unreal C++ / Header / Blueprint Spec:</label>
+            <div className="absolute inset-0 z-20 flex items-center justify-center p-12 bg-black/60 backdrop-blur-sm">
+              <div className="w-full max-w-2xl bg-[#0f0f12] border border-zinc-800 rounded-2xl flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
+                <div className="p-6 border-b border-zinc-800 flex items-center justify-between">
+                  <h3 className="text-lg font-bold text-zinc-100">Engenharia Reversa Unreal</h3>
+                  <button onClick={() => setShowEditor(false)} className="text-zinc-500 hover:text-white transition-colors">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" strokeWidth={2.5} /></svg>
+                  </button>
+                </div>
+                <div className="p-6 flex flex-col space-y-4">
+                  <label className="text-xs text-zinc-500 font-mono uppercase tracking-widest">Cole sua classe C++ ou cabeçalho:</label>
                   <textarea 
                     value={sourceCode}
                     onChange={(e) => setSourceCode(e.target.value)}
-                    placeholder="class AMyCharacter : public ACharacter { ..."
-                    className="flex-1 bg-[#0a0a0c] border border-zinc-800 rounded-lg p-4 font-mono text-sm text-blue-400 focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none resize-none"
+                    placeholder="class AMyActor : public AActor { ..."
+                    className="h-64 bg-[#0a0a0c] border border-zinc-800 rounded-xl p-4 font-mono text-sm text-blue-400 focus:ring-2 focus:ring-blue-600 outline-none resize-none shadow-inner"
                   />
+                  <button 
+                    onClick={handleGenerate}
+                    disabled={isGenerating}
+                    className="w-full py-4 bg-blue-600 rounded-xl font-bold hover:bg-blue-500 transition-all shadow-xl shadow-blue-900/40 flex items-center justify-center gap-3"
+                  >
+                    {isGenerating ? <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" /> : null}
+                    {isGenerating ? 'Processando Código...' : 'Reconstruir Hierarquia'}
+                  </button>
                 </div>
-                <button 
-                  onClick={handleGenerate}
-                  disabled={isGenerating}
-                  className="w-full py-3 bg-blue-600 rounded-lg font-semibold hover:bg-blue-500 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
-                >
-                  {isGenerating ? (
-                    <><div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" /><span>Generating...</span></>
-                  ) : (
-                    <><span>Reconstruct Hierarchy</span></>
-                  )}
-                </button>
               </div>
             </div>
           )}
 
-          {/* Analysis Sidebar (Floating right) */}
           {analysis && !showEditor && (
-            <div className="w-80 bg-[#0f0f12] border border-zinc-800 rounded-xl p-6 overflow-y-auto animate-in fade-in duration-500 shadow-2xl">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="font-bold text-zinc-100 flex items-center">
-                  <svg className="w-4 h-4 mr-2 text-yellow-400" fill="currentColor" viewBox="0 0 20 20"><path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zM8 16v-1a1 1 0 112 0v1a1 1 0 11-2 0zM13.536 15.657l.707-.707a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414zM16.464 13.536l-.707-.707a1 1 0 10-1.414 1.414l.707.707a1 1 0 001.414-1.414z" /></svg>
-                  Architect Review
+            <div className="w-96 bg-[#0f0f12] border border-zinc-800 rounded-2xl p-6 overflow-y-auto animate-in slide-in-from-right duration-500 shadow-2xl flex flex-col border-l-blue-900/50">
+              <div className="flex items-center justify-between mb-8">
+                <h3 className="font-black text-zinc-100 flex items-center gap-2 text-sm uppercase tracking-tighter">
+                  <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+                  Relatório Técnico
                 </h3>
                 <button onClick={() => setAnalysis(null)} className="text-zinc-600 hover:text-white">&times;</button>
               </div>
 
-              <div className="space-y-6">
+              <div className="space-y-8">
                 <div>
-                  <div className="flex justify-between text-xs font-mono text-zinc-500 mb-2">
-                    <span>Complexity</span>
-                    <span>{analysis.complexityScore}/10</span>
+                  <div className="flex justify-between text-xs font-mono text-zinc-500 mb-3">
+                    <span>Complexidade Estrutural</span>
+                    <span className="text-blue-400 font-bold">{analysis.complexityScore}/10</span>
                   </div>
-                  <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">
+                  <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
                     <div 
-                      className="h-full bg-blue-500 transition-all duration-1000" 
+                      className={`h-full transition-all duration-1000 ${analysis.complexityScore > 7 ? 'bg-red-500' : 'bg-blue-500'}`} 
                       style={{ width: `${analysis.complexityScore * 10}%` }} 
                     />
                   </div>
                 </div>
 
-                <div>
-                  <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3">Suggestions</h4>
-                  <ul className="space-y-3">
-                    {analysis.refactorSuggestions.map((s: string, i: number) => (
-                      <li key={i} className="text-sm text-zinc-400 bg-zinc-900/50 p-3 rounded-lg border-l-2 border-blue-600">
-                        {s}
-                      </li>
-                    ))}
-                  </ul>
+                <div className="space-y-4">
+                  <h4 className="text-[10px] font-black text-zinc-600 uppercase tracking-widest">Sugestões do Arquiteto</h4>
+                  {analysis.refactorSuggestions.map((s: string, i: number) => (
+                    <div key={i} className="text-sm text-zinc-300 bg-zinc-900/80 p-4 rounded-xl border border-zinc-800/50 relative overflow-hidden group">
+                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-600 opacity-50 group-hover:opacity-100 transition-opacity" />
+                      {s}
+                    </div>
+                  ))}
                 </div>
 
-                <div>
-                  <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3">Issues</h4>
-                  <ul className="space-y-3">
+                {analysis.potentialIssues.length > 0 && (
+                  <div className="space-y-4">
+                    <h4 className="text-[10px] font-black text-red-900/80 uppercase tracking-widest">Gargalos Potenciais</h4>
                     {analysis.potentialIssues.map((s: string, i: number) => (
-                      <li key={i} className="text-sm text-zinc-400 bg-red-900/10 p-3 rounded-lg border-l-2 border-red-600">
-                        {s}
-                      </li>
+                      <div key={i} className="text-sm text-red-200 bg-red-900/5 p-4 rounded-xl border border-red-900/20">
+                        • {s}
+                      </div>
                     ))}
-                  </ul>
-                </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
         </div>
         
-        {/* Quick Toolbar (Sticky Bottom) */}
-        <div className="h-12 border-t border-zinc-800 bg-[#0a0a0c] px-8 flex items-center justify-between text-[11px] font-mono text-zinc-600 shrink-0">
-          <div className="flex space-x-6">
-            <span>SYNC: OK</span>
-            <span>MODEL: GEMINI-3-PRO</span>
-            <span>NODES: {activeDiagram.code.split('\n').length}</span>
+        <footer className="h-10 border-t border-zinc-800 bg-[#0a0a0c] px-8 flex items-center justify-between text-[10px] font-mono text-zinc-600 shrink-0">
+          <div className="flex items-center space-x-6">
+            <span className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 bg-green-500 rounded-full" />
+              STATUS: ONLINE
+            </span>
+            <span>ENGINE: UNREAL V5.5 READY</span>
+            <span>MODEL: GEMINI-3-PRO-EXPERIMENTAL</span>
           </div>
-          <div className="flex space-x-4">
-            <span className="text-blue-500/80 cursor-pointer hover:text-blue-400">Export SVG</span>
-            <span className="text-blue-500/80 cursor-pointer hover:text-blue-400">Download .mermaid</span>
+          <div className="flex items-center space-x-4 opacity-50 hover:opacity-100 transition-opacity">
+            <span className="cursor-pointer hover:text-blue-400">DOCS</span>
+            <span className="cursor-pointer hover:text-blue-400">GITHUB</span>
           </div>
-        </div>
+        </footer>
       </main>
     </div>
   );
