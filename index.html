@@ -20,23 +20,18 @@
             height: 100vh;
             width: 100vw;
         }
-        .mono {
-            font-family: 'JetBrains Mono', monospace;
-        }
         
-        /* Custom scrollbars para vertical e horizontal */
+        /* Custom scrollbars */
         ::-webkit-scrollbar {
-            width: 6px;  /* Largura da barra vertical */
-            height: 6px; /* Altura da barra horizontal */
+            width: 6px;
+            height: 6px;
         }
         ::-webkit-scrollbar-track {
             background: #1a1a1e;
-            border-radius: 10px;
         }
         ::-webkit-scrollbar-thumb {
             background: #3f3f46;
             border-radius: 10px;
-            border: 1px solid #1a1a1e;
         }
         ::-webkit-scrollbar-thumb:hover {
             background: #52525b;
@@ -45,21 +40,15 @@
             background: #0a0a0c;
         }
         
-        .mermaid-wrapper {
-            display: inline-block; /* Importante para que o container cresça horizontalmente */
-            min-width: 100%;
-            margin: 0 auto;
+        .mermaid {
+            display: inline-block;
+            min-width: min-content;
         }
         
-        .mermaid-wrapper svg {
+        .mermaid svg {
+            overflow: visible !important;
             display: block;
             margin: 0 auto;
-            overflow: visible !important;
-        }
-        
-        .mermaid text {
-            font-family: 'Inter', sans-serif !important;
-            letter-spacing: -0.01em;
         }
 
         foreignObject {
@@ -68,12 +57,8 @@
         
         div.label {
             white-space: nowrap !important;
-            padding: 1px 6px !important;
+            padding: 1px 4px !important;
             font-size: 10px !important;
-        }
-
-        .overflow-auto {
-            scroll-behavior: smooth;
         }
     </style>
 <script type="importmap">
