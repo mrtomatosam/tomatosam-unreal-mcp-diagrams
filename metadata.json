@@ -1,0 +1,6 @@
+
+{
+  "name": "Unreal Script Visualizer",
+  "description": "An AI-powered Unreal Engine Blueprint diagram generator that transforms natural language descriptions into professional-looking visual script graphs.",
+  "requestFramePermissions": []
+}
